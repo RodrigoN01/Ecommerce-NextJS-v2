@@ -4,10 +4,14 @@ import Link from "next/link";
 import {
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import db from "@/db/db";
+import { CheckCircle2, MoreVertical, XCircle } from "lucide-react";
+import { formatCurrency, formatNumber } from "@/lib/formatters";
 
 export default function AdminProductPage() {
   return (
@@ -23,7 +27,22 @@ export default function AdminProductPage() {
   );
 }
 
-function ProductsTable() {
+async function ProductsTable() {
+  const products = await db.product.findMany({
+    select: {
+      id: true,
+      name: true,
+      priceInCents: true,
+      isAvailableForPurchase: true,
+      _count: { select: { orders: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  if (products.length === 0) {
+    return <p>No products found</p>;
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -39,7 +58,32 @@ function ProductsTable() {
           </TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody></TableBody>
+      <TableBody>
+        {products.map((product) => (
+          <TableRow key={product.id}>
+            <TableCell>
+              {product.isAvailableForPurchase ? (
+                <>
+                  <CheckCircle2 />
+                  <span className='sr-only'>Available</span>
+                </>
+              ) : (
+                <>
+                  <XCircle />
+                  <span className='sr-only'>Unavailable</span>
+                </>
+              )}
+            </TableCell>
+            <TableCell>{product.name}</TableCell>
+            <TableCell>{formatCurrency(product.priceInCents / 100)}</TableCell>
+            <TableCell>{formatNumber(product._count.orders)}</TableCell>
+            <TableCell>
+              <MoreVertical />
+              <span className='sr-only'>Actions</span>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
     </Table>
   );
 }
