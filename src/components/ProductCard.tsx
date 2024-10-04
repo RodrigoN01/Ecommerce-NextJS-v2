@@ -19,7 +19,7 @@ type ProductCardProps = {
   imagePath: string;
 };
 
-export default function ProductCard({
+export function ProductCard({
   id,
   name,
   priceInCents,
