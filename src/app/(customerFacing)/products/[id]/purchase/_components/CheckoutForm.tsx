@@ -1,5 +1,6 @@
 "use client";
 
+import { userOrderExists } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +24,7 @@ import { FormEvent, useState } from "react";
 
 type CheckoutFormProps = {
   product: {
+    id: string;
     imagePath: string;
     name: string;
     priceInCents: number;
@@ -41,45 +43,58 @@ export function CheckoutForm({ product, clientSecret }: CheckoutFormProps) {
       <div className='flex gap-4 items-center'>
         <div className='aspect-video flex-shrink-0 w-1/3 relative'>
           <Image
-            className='object-cover'
-            fill
             src={product.imagePath}
+            fill
             alt={product.name}
+            className='object-cover'
           />
         </div>
         <div>
           <div className='text-lg'>
             {formatCurrency(product.priceInCents / 100)}
-            <h1 className='text-2xl font-bold'>{product.name}</h1>
-            <div className='line-clamp-3 text-muted-foreground'>
-              {product.description}
-            </div>
+          </div>
+          <h1 className='text-2xl font-bold'>{product.name}</h1>
+          <div className='line-clamp-3 text-muted-foreground'>
+            {product.description}
           </div>
         </div>
       </div>
       <Elements options={{ clientSecret }} stripe={stripePromise}>
-        <Form priceInCents={product.priceInCents} />
+        <Form priceInCents={product.priceInCents} productId={product.id} />
       </Elements>
     </div>
   );
 }
 
-function Form({ priceInCents }: { priceInCents: number }) {
+function Form({
+  priceInCents,
+  productId,
+}: {
+  priceInCents: number;
+  productId: string;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [email, setEmail] = useState<string>();
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    if (!stripe || !elements) {
-      return;
-    }
+    if (stripe == null || elements == null || email == null) return;
 
     setIsLoading(true);
 
-    // Check for existing order
+    const orderExists = await userOrderExists(email, productId);
+
+    if (orderExists) {
+      setErrorMessage(
+        "You have already purchased this product. Try downloading it from the My Orders page"
+      );
+      setIsLoading(false);
+      return;
+    }
 
     stripe
       .confirmPayment({
@@ -92,12 +107,10 @@ function Form({ priceInCents }: { priceInCents: number }) {
         if (error.type === "card_error" || error.type === "validation_error") {
           setErrorMessage(error.message);
         } else {
-          setErrorMessage("An unexpected error has occurred.");
+          setErrorMessage("An unknown error occurred");
         }
       })
-      .finally(() => {
-        setIsLoading(false);
-      });
+      .finally(() => setIsLoading(false));
   }
 
   return (
@@ -114,7 +127,9 @@ function Form({ priceInCents }: { priceInCents: number }) {
         <CardContent>
           <PaymentElement />
           <div className='mt-4'>
-            <LinkAuthenticationElement />
+            <LinkAuthenticationElement
+              onChange={(e) => setEmail(e.value.email)}
+            />
           </div>
         </CardContent>
         <CardFooter>
