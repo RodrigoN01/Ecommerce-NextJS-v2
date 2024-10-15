@@ -1,13 +1,14 @@
 import db from "@/db/db";
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
 import Stripe from "stripe";
+import { Resend } from "resend";
+import PurchaseReceiptEmail from "@/email/PurchaseReceipt";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 const resend = new Resend(process.env.RESEND_API_KEY as string);
 
 export async function POST(req: NextRequest) {
-  const event = stripe.webhooks.constructEvent(
+  const event = await stripe.webhooks.constructEvent(
     await req.text(),
     req.headers.get("stripe-signature") as string,
     process.env.STRIPE_WEBHOOK_SECRET as string
@@ -19,24 +20,15 @@ export async function POST(req: NextRequest) {
     const email = charge.billing_details.email;
     const pricePaidInCents = charge.amount;
 
-    const product = await db.product.findUnique({
-      where: { id: productId },
-    });
-
+    const product = await db.product.findUnique({ where: { id: productId } });
     if (product == null || email == null) {
-      return new NextResponse("Bad request", { status: 400 });
+      return new NextResponse("Bad Request", { status: 400 });
     }
 
     const userFields = {
       email,
-      orders: {
-        create: {
-          pricePaidInCents,
-          productId,
-        },
-      },
+      orders: { create: { productId, pricePaidInCents } },
     };
-
     const {
       orders: [order],
     } = await db.user.upsert({
@@ -46,7 +38,7 @@ export async function POST(req: NextRequest) {
       select: { orders: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
 
-    const downloadVerificationId = await db.downloadVerification.create({
+    const downloadVerification = await db.downloadVerification.create({
       data: {
         productId,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
@@ -57,9 +49,15 @@ export async function POST(req: NextRequest) {
       from: `Support <${process.env.SENDER_EMAIL}>`,
       to: email,
       subject: "Order Confirmation",
-      react: <h1>hi</h1>,
+      react: (
+        <PurchaseReceiptEmail
+          order={order}
+          product={product}
+          downloadVerificationId={downloadVerification.id}
+        />
+      ),
     });
-
-    return new NextResponse();
   }
+
+  return new NextResponse();
 }
